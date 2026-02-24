@@ -84,14 +84,14 @@ def get_ip_version(ip_str: str) -> int:
     return ip.version
 
 
-def get_ip_info(ip_str: str, ip_filter: Literal["all", "registrant", "version"] = "all") -> str:
+def get_ip_info(ip_str: str, filt: Literal["all", "registrant", "version"] = "all") -> str:
     """Returns a human-readable string based on filter."""
     ip = ip_address(ip_str)
     registrant = get_ip_registrant(ip_str)
 
-    if ip_filter == "registrant":
+    if filt == "registrant":
         return registrant or f"registrant not found for IP Address {ip}"
-    if ip_filter == "version":
+    if filt == "version":
         return str(ip.version)
 
     return f"{ip} is an IPv{ip.version} IP Address Registered by '{registrant}'."
@@ -118,14 +118,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.registrant:
-        ip_filter = "registrant"
+        filt = "registrant"
     elif args.version:
-        ip_filter = "version"
+        filt = "version"
     else:
-        ip_filter = "all"
+        filt = "all"
 
     try:
-        out = get_ip_info(args.ip_string, ip_filter=ip_filter)
+        out = get_ip_info(args.ip_string, filt=filt)
         print(out)
         return 0
     except ValueError as e:
