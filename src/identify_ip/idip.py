@@ -1,16 +1,52 @@
 from __future__ import annotations
 
+import random
 import argparse
 import sys
 from ipaddress import ip_address
 from typing import Literal
-
+import time
+from requests.adapters import HTTPAdapter
 import requests
+from urllib3.util.retry import Retry
 
 BASE_URL = "https://rdap.arin.net/registry/ip/"
 REQUESTS_TIMEOUT = 15
 HEADERS = {"Accept": "application/rdap+json"}
 
+MIN_SECONDS_BETWEEN_CALLS = 0.2
+_last_call_ts = 0.0
+
+def _throttle():
+    global _last_call_ts
+    if MIN_SECONDS_BETWEEN_CALLS <= 0:
+        return
+    now = time.monotonic()
+    wait = MIN_SECONDS_BETWEEN_CALLS - (now - _last_call_ts)
+    if wait > 0:
+        time.sleep(wait)
+    _last_call_ts = time.monotonic()
+
+def _make_session() -> requests.Session:
+    s = requests.Session()
+
+    retry = Retry(
+        total=6,
+        connect=6,
+        read=6,
+        status=6,
+        backoff_factor=0.8,  # exponential backoff
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET"]),
+        respect_retry_after_header=True,  # honors Retry-After for 429/503
+        raise_on_status=False,            # we will call raise_for_status ourselves
+    )
+
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)
+    s.mount("https://", adapter)
+    return s
+
+_SESSION = _make_session()
 
 def parse_vcard_array(vcard_array: list) -> dict:
     """Converts an RDAP vcardArray (jCard) into a dict."""
@@ -66,17 +102,58 @@ def parse_entities(entities: list[dict]) -> str | None:
 
     return None
 
+class RdapRateLimited(RuntimeError):
+    """Raised when RDAP returns 429 and we choose not to (or cannot) recover."""
+    pass
+
+def _retry_after_seconds(resp: requests.Response) -> int | None:
+    ra = resp.headers.get("Retry-After")
+    if not ra:
+        return None
+    try:
+        return int(ra)
+    except ValueError:
+        # Sometimes Retry-After can be an HTTP date; ignoring for simplicity.
+        return None
 
 def get_ip_registrant(ip_str: str, *, base_url: str = BASE_URL) -> str | None:
     """Returns the registrant organization/person name for an IP."""
     url = base_url + ip_str
-    resp = requests.get(url, headers=HEADERS, timeout=REQUESTS_TIMEOUT)
-    resp.raise_for_status()
+
+    # Basic throttle so you don't hammer RDAP in loops
+    _throttle()
+
+    try:
+        resp = _SESSION.get(url, headers=HEADERS, timeout=REQUESTS_TIMEOUT)
+    except requests.RequestException as e:
+        # Network glitch, TLS reset, DNS issue, etc.
+        return None
+
+    # If still rate-limited after urllib3 retries, handle here
+    if resp.status_code == 429:
+        ra = _retry_after_seconds(resp)
+        # If server told us how long, we can optionally wait once then retry
+        if ra is not None and ra <= 60:
+            time.sleep(ra + random.uniform(0, 0.5))  # small jitter
+            _throttle()
+            try:
+                resp = _SESSION.get(url, headers=HEADERS, timeout=REQUESTS_TIMEOUT)
+            except requests.RequestException:
+                return None
+        else:
+            # Don't block forever inside library code; let caller decide what to do.
+            # Returning None keeps your "caching handled by caller" approach.
+            return None
+
+    # For other HTTP errors, bail out cleanly
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        return None
 
     data = resp.json()
     entities = data.get("entities") or []
     return parse_entities(entities)
-
 
 def get_ip_version(ip_str: str) -> int:
     """Returns IP protocol version (4 or 6). Raises ValueError if invalid."""
