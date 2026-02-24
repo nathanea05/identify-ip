@@ -33,6 +33,7 @@ IP address.
 
 ## Command Line Usage
 identify-ip [options] <IP Address>
+
 idip [options] <IP Address>
 
 Options:
