@@ -31,10 +31,17 @@ managing a large network and need a way to detect the ISP for each WAN connectio
 IP address into identify-ip with the "registrant" filter, and it will return the name of the Company/User who registered that
 IP address.
 
-## Usage
-From the command line, run identify-ip <IP Address>
+## Command Line Usage
+identify-ip [options] <IP Address>
+idip [options] <IP Address>
 
-Within a Python file:
-from identify-ip import get_ip_info()
-registrant = get_ip_info("8.8.8.8")
+Options:
+-h: Display the help menu
+-v: Print the IP Protocol Version
+-r: Print the RDAP Registrant
+
+## Python Usage
+from identify-ip import get_ip_info
+
+registrant = get_ip_info("8.8.8.8", filt="registrant")
 
