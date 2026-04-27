@@ -154,9 +154,9 @@ def get_rdap_data(ip_str: str, *, base_url: str = BASE_URL) -> dict | None:
     data = resp.json()
     return data
 
-def get_ip_registrant(ip_str: str, *, base_url: str = BASE_URL) -> str | None:
+def get_ip_registrant(ip_str: str) -> str | None:
     """Returns the registrant organization/person name for an IP."""
-    data = get_rdap_data(ip_str, base_url)
+    data = get_rdap_data(ip_str)
     entities = data.get("entities") or []
     return parse_entities(entities)
 
