@@ -116,8 +116,8 @@ def _retry_after_seconds(resp: requests.Response) -> int | None:
         # Sometimes Retry-After can be an HTTP date; ignoring for simplicity.
         return None
 
-def get_ip_registrant(ip_str: str, *, base_url: str = BASE_URL) -> str | None:
-    """Returns the registrant organization/person name for an IP."""
+def get_rdap_data(ip_str: str, *, base_url: str = BASE_URL) -> dict | None:
+    """Returns the raw RDAP data for an IP in json form."""
     url = base_url + ip_str
 
     # Basic throttle so you don't hammer RDAP in loops
@@ -152,6 +152,11 @@ def get_ip_registrant(ip_str: str, *, base_url: str = BASE_URL) -> str | None:
         return None
 
     data = resp.json()
+    return data
+
+def get_ip_registrant(ip_str: str, *, base_url: str = BASE_URL) -> str | None:
+    """Returns the registrant organization/person name for an IP."""
+    data = get_rdap_data(ip_str, base_url)
     entities = data.get("entities") or []
     return parse_entities(entities)
 
