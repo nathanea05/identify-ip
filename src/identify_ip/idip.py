@@ -81,7 +81,9 @@ def parse_entities(entities: list[dict]) -> str | None:
     if not entities:
         return None
 
-    # Prefer registrant at this level
+    registrant_entities = []
+    other_entities = []
+
     for entity in entities:
         roles = entity.get("roles") or []
         if "registrant" in roles:
@@ -91,9 +93,12 @@ def parse_entities(entities: list[dict]) -> str | None:
                 name = get_vcard_name(vcard)
                 if name:
                     return name
+            registrant_entities.append(entity)
+        else:
+            other_entities.append(entity)
 
-    # Recurse into nested entities
-    for entity in entities:
+    # Recurse depth-first: registrant entities' children before others
+    for entity in registrant_entities + other_entities:
         nested = entity.get("entities") or []
         if nested:
             name = parse_entities(nested)
@@ -157,6 +162,8 @@ def get_rdap_data(ip_str: str, *, base_url: str = BASE_URL) -> dict | None:
 def get_ip_registrant(ip_str: str) -> str | None:
     """Returns the registrant organization/person name for an IP."""
     data = get_rdap_data(ip_str)
+    if data is None:
+        return None
     entities = data.get("entities") or []
     return parse_entities(entities)
 
@@ -169,12 +176,14 @@ def get_ip_version(ip_str: str) -> int:
 def get_ip_info(ip_str: str, filt: Literal["all", "registrant", "version"] = "all") -> str:
     """Returns a human-readable string based on filter."""
     ip = ip_address(ip_str)
-    registrant = get_ip_registrant(ip_str)
+
+    if filt == "version":
+        return str(ip.version)
+
+    registrant = get_ip_registrant(str(ip))
 
     if filt == "registrant":
         return registrant or f"registrant not found for IP Address {ip}"
-    if filt == "version":
-        return str(ip.version)
 
     return f"{ip} is an IPv{ip.version} IP Address Registered by '{registrant}'."
 
@@ -213,10 +222,6 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as e:
         print(e, file=sys.stderr)
         return 1
-    except requests.HTTPError as e:
-        # Optional: nicer error message
-        print(f"RDAP lookup failed: {e}", file=sys.stderr)
-        return 2
 
 
 if __name__ == "__main__":
